@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import re
@@ -16,6 +17,15 @@ from .config import ConfigManager
 
 
 logger = logging.getLogger(__name__)
+
+_global_loop = None
+
+
+def get_event_loop():
+    global _global_loop
+    if _global_loop is None:
+        _global_loop = asyncio.new_event_loop()
+    return _global_loop
 
 
 def remove_control_characters(s):

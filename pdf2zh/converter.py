@@ -14,7 +14,7 @@ from pdfminer.pdfinterp import PDFGraphicState, PDFResourceManager
 from pdfminer.utils import apply_matrix_pt, mult_matrix
 from pymupdf import Font
 
-from .translator import BaseTranslator, OpenAITranslator
+from .translator import BaseTranslator, OpenAITranslator, get_event_loop
 
 
 log = logging.getLogger(__name__)
@@ -332,7 +332,10 @@ class TranslateConverter(PDFConverterEx):
                 raise e
         async def _run_tasks(tasks:list):
             return await asyncio.gather(*tasks)
-        news=asyncio.run(_run_tasks([_task(s) for s in sstk]))  # 异步翻译
+        loop = get_event_loop()
+        if loop.is_running():
+            raise RuntimeError("Cannot run in already running loop. Use async context.")
+        news = loop.run_until_complete(_run_tasks([_task(s) for s in sstk]))  # 异步翻译
 
         ############################################################
         # C. 新文档排版
