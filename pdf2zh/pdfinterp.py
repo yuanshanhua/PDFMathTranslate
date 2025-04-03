@@ -1,21 +1,21 @@
 import logging
 from typing import Any, Dict, Optional, Sequence, Tuple, cast
-import numpy as np
 
+import numpy as np
 from pdfminer import settings
 from pdfminer.pdfcolor import PREDEFINED_COLORSPACE, PDFColorSpace
 from pdfminer.pdfdevice import PDFDevice
+from pdfminer.pdffont import PDFFont
 from pdfminer.pdfinterp import (
-    PDFPageInterpreter,
-    PDFResourceManager,
-    PDFContentParser,
-    PDFInterpreterError,
-    Color,
-    PDFStackT,
     LITERAL_FORM,
     LITERAL_IMAGE,
+    Color,
+    PDFContentParser,
+    PDFInterpreterError,
+    PDFPageInterpreter,
+    PDFResourceManager,
+    PDFStackT,
 )
-from pdfminer.pdffont import PDFFont
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdftypes import (
     PDFObjRef,
@@ -34,9 +34,10 @@ from pdfminer.utils import (
     MATRIX_IDENTITY,
     Matrix,
     Rect,
-    mult_matrix,
     apply_matrix_pt,
+    mult_matrix,
 )
+
 
 log = logging.getLogger(__name__)
 
@@ -54,9 +55,7 @@ class PDFPageInterpreterEx(PDFPageInterpreter):
     Reference: PDF Reference, Appendix A, Operator Summary
     """
 
-    def __init__(
-        self, rsrcmgr: PDFResourceManager, device: PDFDevice, obj_patch
-    ) -> None:
+    def __init__(self, rsrcmgr: PDFResourceManager, device: PDFDevice, obj_patch) -> None:
         self.rsrcmgr = rsrcmgr
         self.device = device
         self.obj_patch = obj_patch
@@ -238,9 +237,7 @@ class PDFPageInterpreterEx(PDFPageInterpreter):
                     pos_inv = -np.mat(ctm[4:]) * ctm_inv
                 a, b, c, d = ctm_inv.reshape(4).tolist()
                 e, f = pos_inv.tolist()[0]
-                self.obj_patch[self.xobjmap[xobjid].objid] = (
-                    f"q {ops_base}Q {a} {b} {c} {d} {e} {f} cm {ops_new}"
-                )
+                self.obj_patch[self.xobjmap[xobjid].objid] = f"q {ops_base}Q {a} {b} {c} {d} {e} {f} cm {ops_new}"
             except Exception:
                 pass
         elif subtype is LITERAL_IMAGE and "Width" in xobj and "Height" in xobj:
@@ -318,7 +315,7 @@ class PDFPageInterpreterEx(PDFPageInterpreter):
                     "_q",
                 )
                 if hasattr(self, method):
-                    func = getattr(self, method)
+                    func = getattr(self, method)  # 此处调用 do_* 方法
                     nargs = func.__code__.co_argcount - 1
                     if nargs:
                         args = self.pop(nargs)
@@ -326,18 +323,10 @@ class PDFPageInterpreterEx(PDFPageInterpreter):
                         if len(args) == nargs:
                             func(*args)
                             if not (
-                                name[0] == "T"
-                                or name in ['"', "'", "EI", "MP", "DP", "BMC", "BDC"]
+                                name[0] == "T" or name in ['"', "'", "EI", "MP", "DP", "BMC", "BDC"]
                             ):  # 过滤 T 系列文字指令，因为 EI 的参数是 obj 所以也需要过滤（只在少数文档中画横线时使用），过滤 marked 系列指令
                                 p = " ".join(
-                                    [
-                                        (
-                                            f"{x:f}"
-                                            if isinstance(x, float)
-                                            else str(x).replace("'", "")
-                                        )
-                                        for x in args
-                                    ]
+                                    [(f"{x:f}" if isinstance(x, float) else str(x).replace("'", "")) for x in args]
                                 )
                                 ops += f"{p} {name} "
                     else:
@@ -347,14 +336,7 @@ class PDFPageInterpreterEx(PDFPageInterpreter):
                             targs = []
                         if not (name[0] == "T" or name in ["BI", "ID", "EMC"]):
                             p = " ".join(
-                                [
-                                    (
-                                        f"{x:f}"
-                                        if isinstance(x, float)
-                                        else str(x).replace("'", "")
-                                    )
-                                    for x in targs
-                                ]
+                                [(f"{x:f}" if isinstance(x, float) else str(x).replace("'", "")) for x in targs]
                             )
                             ops += f"{p} {name} "
                 elif settings.STRICT:

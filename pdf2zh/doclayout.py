@@ -1,10 +1,11 @@
 import abc
-import os.path
+import ast
 
 import cv2
 import numpy as np
-import ast
-from babeldoc.assets.assets import get_doclayout_onnx_model_path
+
+from .assets.assets import get_doclayout_onnx_model_path
+
 
 try:
     import onnx
@@ -16,10 +17,6 @@ except ImportError as e:
             "Download it at https://aka.ms/vs/17/release/vc_redist.x64.exe"
         ) from e
     raise
-
-from huggingface_hub import hf_hub_download
-
-from pdf2zh.config import ConfigManager
 
 
 class DocLayoutModel(abc.ABC):
@@ -112,9 +109,7 @@ class OnnxModel(DocLayoutModel):
         resized_h, resized_w = int(round(h * r)), int(round(w * r))
 
         # Resize image
-        image = cv2.resize(
-            image, (resized_w, resized_h), interpolation=cv2.INTER_LINEAR
-        )
+        image = cv2.resize(image, (resized_w, resized_h), interpolation=cv2.INTER_LINEAR)
 
         # Calculate padding size and align to stride multiple
         pad_w = (new_w - resized_w) % self.stride
@@ -123,9 +118,7 @@ class OnnxModel(DocLayoutModel):
         left, right = pad_w // 2, pad_w - pad_w // 2
 
         # Add padding
-        image = cv2.copyMakeBorder(
-            image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114)
-        )
+        image = cv2.copyMakeBorder(image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114))
 
         return image
 
@@ -169,9 +162,7 @@ class OnnxModel(DocLayoutModel):
 
         # Postprocess predictions
         preds = preds[preds[..., 4] > 0.25]
-        preds[..., :4] = self.scale_boxes(
-            (new_h, new_w), preds[..., :4], (orig_h, orig_w)
-        )
+        preds[..., :4] = self.scale_boxes((new_h, new_w), preds[..., :4], (orig_h, orig_w))
         return [YoloResult(boxes=preds, names=self._names)]
 
 

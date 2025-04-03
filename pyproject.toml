@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "pdf2zh"
 version = "1.9.6"
@@ -17,71 +21,63 @@ dependencies = [
     "tqdm",
     "tenacity",
     "numpy",
-    "ollama",
-    "xinference-client",
-    "deepl",
     "openai",
-    "azure-ai-translation-text<=1.0.1",
-    "gradio",
     "huggingface_hub",
     "onnx",
     "onnxruntime",
     "opencv-python-headless",
-    "tencentcloud-sdk-python-tmt",
     "pdfminer.six>=20240706",
-    "gradio_pdf>=0.0.21",
     "pikepdf",
     "peewee>=3.17.8",
     "fontTools",
-    "babeldoc>=0.1.22, <0.3.0",
-    "rich"
+    "rich",
+    "aiolimiter>=1.2.1",
 ]
 
 [project.optional-dependencies]
-backend = [
-    "flask",
-    "celery",
-    "redis"
-]
-argostranslate = [
-    "argostranslate"
-]
 
 [dependency-groups]
-dev = [
-    "black",
-    "flake8",
-    "pre-commit",
-    "pytest",
-    "build",
-    "bumpver>=2024.1130",
-]
+dev = ["black", "flake8", "pre-commit", "pytest", "build", "bumpver>=2024.1130"]
 
 [project.urls]
 Homepage = "https://github.com/Byaidu/PDFMathTranslate"
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project.scripts]
 pdf2zh = "pdf2zh.pdf2zh:main"
 
-[tool.flake8]
-ignore = ["E203", "E261", "E501", "W503", "E741"]
-max-line-length = 88
+[tool.uv]
+index-url = "http://mirrors.aliyun.com/pypi/simple"
 
+[tool.uv.pip]
+index-url = "http://mirrors.aliyun.com/pypi/simple"
 
+[tool.ruff]
+line-length = 119
 
-[bumpver]
-current_version = "1.9.6"
-version_pattern = "MAJOR.MINOR.PATCH[.PYTAGNUM]"
+[tool.ruff.lint]
+# Never enforce `E501` (line length violations).
+ignore = ["C901", "E501", "E741", "F402", "F823"]
+select = ["C", "E", "F", "I", "W"]
 
-[bumpver.file_patterns]
-"pyproject.toml" = [
-    'current_version = "{version}"',
-    'version = "{version}"'
-]
-"pdf2zh/__init__.py" = [
-    '__version__ = "{version}"'
-]
+# Ignore import violations in all `__init__.py` files.
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402", "F401", "F403", "F811"]
+"src/transformers/file_utils.py" = ["F401"]
+"src/transformers/utils/dummy_*.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+lines-after-imports = 2
+known-first-party = ["transformers"]
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"

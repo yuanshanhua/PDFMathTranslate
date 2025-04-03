@@ -1,16 +1,16 @@
-"""Functions that can be used for the most common use-cases for pdf2zh.six"""
+"""Functions that can be used for the most common use-cases for .six"""
 
 import asyncio
 import io
+import logging
 import os
 import re
 import sys
 import tempfile
-import logging
 from asyncio import CancelledError
 from pathlib import Path
 from string import Template
-from typing import Any, BinaryIO, List, Optional, Dict
+from typing import Any, BinaryIO, Dict, List, Optional
 
 import numpy as np
 import requests
@@ -22,12 +22,12 @@ from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
 from pymupdf import Document, Font
 
-from pdf2zh.converter import TranslateConverter
-from pdf2zh.doclayout import OnnxModel
-from pdf2zh.pdfinterp import PDFPageInterpreterEx
+from .assets.assets import get_font_and_metadata
+from .config import ConfigManager
+from .converter import TranslateConverter
+from .doclayout import OnnxModel
+from .pdfinterp import PDFPageInterpreterEx
 
-from pdf2zh.config import ConfigManager
-from babeldoc.assets.assets import get_font_and_metadata
 
 NOTO_NAME = "noto"
 
@@ -56,18 +56,91 @@ noto_list = [
 ]
 
 
-def check_files(files: List[str]) -> List[str]:
-    files = [
-        f for f in files if not f.startswith("http://")
-    ]  # exclude online files, http
-    files = [
-        f for f in files if not f.startswith("https://")
-    ]  # exclude online files, https
+def _download_remote_fonts(lang: str):
+    lang = lang.lower()
+    LANG_NAME_MAP = {
+        **{la: "GoNotoKurrent-Regular.ttf" for la in noto_list},
+        **{
+            la: f"SourceHanSerif{region}-Regular.ttf"
+            for region, langs in {
+                "CN": ["zh-cn", "zh-hans", "zh"],
+                "TW": ["zh-tw", "zh-hant"],
+                "JP": ["ja"],
+                "KR": ["ko"],
+            }.items()
+            for la in langs
+        },
+    }
+    font_name = LANG_NAME_MAP.get(lang, "GoNotoKurrent-Regular.ttf")
+
+    # docker
+    font_path = ConfigManager.get("NOTO_FONT_PATH", Path("/app", font_name).as_posix())
+    if not Path(font_path).exists():
+        font_path, _ = get_font_and_metadata(font_name)
+        font_path = font_path.as_posix()
+
+    logger.info(f"use font: {font_path}")
+
+    return font_path
+
+
+def _convert_to_pdfa(input_path, output_path):
+    """
+    Convert PDF to PDF/A format
+
+    Args:
+        input_path: Path to source PDF file
+        output_path: Path to save PDF/A file
+    """
+    from pikepdf import Dictionary, Name, Pdf
+
+    # Open the PDF file
+    pdf = Pdf.open(input_path)
+
+    # Add PDF/A conformance metadata
+    metadata = {
+        "pdfa_part": "2",
+        "pdfa_conformance": "B",
+        "title": pdf.docinfo.get("/Title", ""),
+        "author": pdf.docinfo.get("/Author", ""),
+        "creator": "PDF Math Translate",
+    }
+
+    with pdf.open_metadata() as meta:
+        meta.load_from_docinfo(pdf.docinfo)
+        meta["pdfaid:part"] = metadata["pdfa_part"]
+        meta["pdfaid:conformance"] = metadata["pdfa_conformance"]
+
+    # Create OutputIntent dictionary
+    output_intent = Dictionary(
+        {
+            "/Type": Name("/OutputIntent"),
+            "/S": Name("/GTS_PDFA1"),
+            "/OutputConditionIdentifier": "sRGB IEC61966-2.1",
+            "/RegistryName": "http://www.color.org",
+            "/Info": "sRGB IEC61966-2.1",
+        }
+    )
+
+    # Add output intent to PDF root
+    if "/OutputIntents" not in pdf.Root:
+        pdf.Root.OutputIntents = [output_intent]
+    else:
+        pdf.Root.OutputIntents.append(output_intent)
+
+    # Save as PDF/A
+    pdf.save(output_path, linearize=True)
+    pdf.close()
+
+
+def _check_files(files: List[str]) -> List[str]:
+    files = [f for f in files if not f.startswith("http://")]  # exclude online files, http
+    files = [f for f in files if not f.startswith("https://")]  # exclude online files, https
     missing_files = [file for file in files if not os.path.exists(file)]
     return missing_files
 
 
-def translate_patch(
+def _translate_patch(
     inf: BinaryIO,
     pages: Optional[list[int]] = None,
     vfont: str = "",
@@ -126,9 +199,7 @@ def translate_patch(
                 callback(progress)
             page.pageno = pageno
             pix = doc_zh[page.pageno].get_pixmap()
-            image = np.fromstring(pix.samples, np.uint8).reshape(
-                pix.height, pix.width, 3
-            )[:, :, ::-1]
+            image = np.fromstring(pix.samples, np.uint8).reshape(pix.height, pix.width, 3)[:, :, ::-1]
             page_layout = model.predict(image, imgsz=int(pix.height / 32) * 32)[0]
             # kdtree 是不可能 kdtree 的，不如直接渲染成图片，用空间换时间
             box = np.ones((pix.height, pix.width))
@@ -186,7 +257,7 @@ def translate_stream(
 ):
     font_list = [("tiro", None)]
 
-    font_path = download_remote_fonts(lang_out.lower())
+    font_path = _download_remote_fonts(lang_out.lower())
     noto_name = NOTO_NAME
     noto = Font(noto_name, font_path)
     font_list.append((noto_name, font_path))
@@ -229,7 +300,7 @@ def translate_stream(
     fp = io.BytesIO()
 
     doc_zh.save(fp)
-    obj_patch: dict = translate_patch(fp, **locals())
+    obj_patch: dict = _translate_patch(fp, **locals())
 
     for obj_id, ops_new in obj_patch.items():
         # ops_old=doc_en.xref_stream(obj_id)
@@ -248,55 +319,6 @@ def translate_stream(
         doc_zh.write(deflate=True, garbage=3, use_objstms=1),
         doc_en.write(deflate=True, garbage=3, use_objstms=1),
     )
-
-
-def convert_to_pdfa(input_path, output_path):
-    """
-    Convert PDF to PDF/A format
-
-    Args:
-        input_path: Path to source PDF file
-        output_path: Path to save PDF/A file
-    """
-    from pikepdf import Dictionary, Name, Pdf
-
-    # Open the PDF file
-    pdf = Pdf.open(input_path)
-
-    # Add PDF/A conformance metadata
-    metadata = {
-        "pdfa_part": "2",
-        "pdfa_conformance": "B",
-        "title": pdf.docinfo.get("/Title", ""),
-        "author": pdf.docinfo.get("/Author", ""),
-        "creator": "PDF Math Translate",
-    }
-
-    with pdf.open_metadata() as meta:
-        meta.load_from_docinfo(pdf.docinfo)
-        meta["pdfaid:part"] = metadata["pdfa_part"]
-        meta["pdfaid:conformance"] = metadata["pdfa_conformance"]
-
-    # Create OutputIntent dictionary
-    output_intent = Dictionary(
-        {
-            "/Type": Name("/OutputIntent"),
-            "/S": Name("/GTS_PDFA1"),
-            "/OutputConditionIdentifier": "sRGB IEC61966-2.1",
-            "/RegistryName": "http://www.color.org",
-            "/Info": "sRGB IEC61966-2.1",
-        }
-    )
-
-    # Add output intent to PDF root
-    if "/OutputIntents" not in pdf.Root:
-        pdf.Root.OutputIntents = [output_intent]
-    else:
-        pdf.Root.OutputIntents.append(output_intent)
-
-    # Save as PDF/A
-    pdf.save(output_path, linearize=True)
-    pdf.close()
 
 
 def translate(
@@ -322,7 +344,7 @@ def translate(
     if not files:
         raise PDFValueError("No files to process.")
 
-    missing_files = check_files(files)
+    missing_files = _check_files(files)
 
     if missing_files:
         print("The following files do not exist:", file=sys.stderr)
@@ -333,16 +355,12 @@ def translate(
     result_files = []
 
     for file in files:
-        if type(file) is str and (
-            file.startswith("http://") or file.startswith("https://")
-        ):
+        if type(file) is str and (file.startswith("http://") or file.startswith("https://")):
             print("Online files detected, downloading...")
             try:
                 r = requests.get(file, allow_redirects=True)
                 if r.status_code == 200:
-                    with tempfile.NamedTemporaryFile(
-                        suffix=".pdf", delete=False
-                    ) as tmp_file:
+                    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
                         print(f"Writing the file: {file}...")
                         tmp_file.write(r.content)
                         file = tmp_file.name
@@ -357,11 +375,9 @@ def translate(
         # If the commandline has specified converting to PDF/A format
         # --compatible / -cp
         if compatible:
-            with tempfile.NamedTemporaryFile(
-                suffix="-pdfa.pdf", delete=False
-            ) as tmp_pdfa:
+            with tempfile.NamedTemporaryFile(suffix="-pdfa.pdf", delete=False) as tmp_pdfa:
                 print(f"Converting {file} to PDF/A format...")
-                convert_to_pdfa(file, tmp_pdfa.name)
+                _convert_to_pdfa(file, tmp_pdfa.name)
                 doc_raw = open(tmp_pdfa.name, "rb")
                 os.unlink(tmp_pdfa.name)
         else:
@@ -372,9 +388,7 @@ def translate(
         temp_dir = Path(tempfile.gettempdir())
         file_path = Path(file)
         try:
-            if file_path.exists() and file_path.resolve().is_relative_to(
-                temp_dir.resolve()
-            ):
+            if file_path.exists() and file_path.resolve().is_relative_to(temp_dir.resolve()):
                 file_path.unlink(missing_ok=True)
                 logger.debug(f"Cleaned temp file: {file_path}")
         except Exception as e:
@@ -395,31 +409,3 @@ def translate(
         result_files.append((str(file_mono), str(file_dual)))
 
     return result_files
-
-
-def download_remote_fonts(lang: str):
-    lang = lang.lower()
-    LANG_NAME_MAP = {
-        **{la: "GoNotoKurrent-Regular.ttf" for la in noto_list},
-        **{
-            la: f"SourceHanSerif{region}-Regular.ttf"
-            for region, langs in {
-                "CN": ["zh-cn", "zh-hans", "zh"],
-                "TW": ["zh-tw", "zh-hant"],
-                "JP": ["ja"],
-                "KR": ["ko"],
-            }.items()
-            for la in langs
-        },
-    }
-    font_name = LANG_NAME_MAP.get(lang, "GoNotoKurrent-Regular.ttf")
-
-    # docker
-    font_path = ConfigManager.get("NOTO_FONT_PATH", Path("/app", font_name).as_posix())
-    if not Path(font_path).exists():
-        font_path, _ = get_font_and_metadata(font_name)
-        font_path = font_path.as_posix()
-
-    logger.info(f"use font: {font_path}")
-
-    return font_path

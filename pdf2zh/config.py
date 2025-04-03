@@ -1,8 +1,8 @@
+import copy
 import json
+import os
 from pathlib import Path
 from threading import RLock  # 改成 RLock
-import os
-import copy
 
 
 class ConfigManager:
@@ -69,9 +69,7 @@ class ConfigManager:
         seen.add(obj_id)
 
         if isinstance(obj, dict):
-            return {
-                k: self._remove_circular_references(v, seen) for k, v in obj.items()
-            }
+            return {k: self._remove_circular_references(v, seen) for k, v in obj.items()}
         elif isinstance(obj, list):
             return [self._remove_circular_references(i, seen) for i in obj]
         return obj
@@ -145,9 +143,7 @@ class ConfigManager:
                     translator["envs"] = copy.deepcopy(new_translator_envs)
                     instance._save_config()
                     return
-            translators.append(
-                {"name": name, "envs": copy.deepcopy(new_translator_envs)}
-            )
+            translators.append({"name": name, "envs": copy.deepcopy(new_translator_envs)})
             instance._config_data["translators"] = translators
             instance._save_config()
 

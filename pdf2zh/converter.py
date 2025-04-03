@@ -1,4 +1,4 @@
-import concurrent.futures
+import asyncio
 import logging
 import re
 import unicodedata
@@ -13,33 +13,9 @@ from pdfminer.pdffont import PDFCIDFont, PDFUnicodeNotDefined
 from pdfminer.pdfinterp import PDFGraphicState, PDFResourceManager
 from pdfminer.utils import apply_matrix_pt, mult_matrix
 from pymupdf import Font
-from tenacity import retry, wait_fixed
 
-from pdf2zh.translator import (
-    AnythingLLMTranslator,
-    ArgosTranslator,
-    AzureOpenAITranslator,
-    AzureTranslator,
-    BaseTranslator,
-    BingTranslator,
-    DeepLTranslator,
-    DeepLXTranslator,
-    DeepseekTranslator,
-    DifyTranslator,
-    GeminiTranslator,
-    GoogleTranslator,
-    GrokTranslator,
-    GroqTranslator,
-    ModelScopeTranslator,
-    OllamaTranslator,
-    OpenAIlikedTranslator,
-    OpenAITranslator,
-    QwenMtTranslator,
-    SiliconTranslator,
-    TencentTranslator,
-    XinferenceTranslator,
-    ZhipuTranslator,
-)
+from .translator import BaseTranslator, OpenAITranslator
+
 
 log = logging.getLogger(__name__)
 
@@ -158,8 +134,7 @@ class TranslateConverter(PDFConverterEx):
         service_model = param[1] if len(param) > 1 else None
         if not envs:
             envs = {}
-        for translator in [GoogleTranslator, BingTranslator, DeepLTranslator, DeepLXTranslator, OllamaTranslator, XinferenceTranslator, AzureOpenAITranslator,
-                           OpenAITranslator, ZhipuTranslator, ModelScopeTranslator, SiliconTranslator, GeminiTranslator, AzureTranslator, TencentTranslator, DifyTranslator, AnythingLLMTranslator, ArgosTranslator, GrokTranslator, GroqTranslator, DeepseekTranslator, OpenAIlikedTranslator, QwenMtTranslator,]:
+        for translator in [OpenAITranslator]:
             if service_name == translator.name:
                 self.translator = translator(lang_in, lang_out, service_model, envs=envs, prompt=prompt, ignore_cache=ignore_cache)
         if not self.translator:
@@ -343,23 +318,21 @@ class TranslateConverter(PDFConverterEx):
         # B. 段落翻译
         log.debug("\n==========[SSTACK]==========\n")
 
-        @retry(wait=wait_fixed(1))
-        def worker(s: str):  # 多线程翻译
+        async def _task(s: str):
             if not s.strip() or re.match(r"^\{v\d+\}$", s):  # 空白和公式不翻译
                 return s
             try:
-                new = self.translator.translate(s)
-                return new
+                res = await self.translator.translate(s)
+                return res
             except BaseException as e:
                 if log.isEnabledFor(logging.DEBUG):
                     log.exception(e)
                 else:
                     log.exception(e, exc_info=False)
                 raise e
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=self.thread
-        ) as executor:
-            news = list(executor.map(worker, sstk))
+        async def _run_tasks(tasks:list):
+            return await asyncio.gather(*tasks)
+        news=asyncio.run(_run_tasks([_task(s) for s in sstk]))  # 异步翻译
 
         ############################################################
         # C. 新文档排版

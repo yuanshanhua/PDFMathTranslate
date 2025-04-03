@@ -1,5 +1,7 @@
 import logging
-from pdf2zh.high_level import translate, translate_stream
+
+from .high_level import translate, translate_stream
+
 
 log = logging.getLogger(__name__)
 
