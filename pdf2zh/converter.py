@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import re
 import unicodedata
@@ -14,7 +13,7 @@ from pdfminer.pdfinterp import PDFGraphicState, PDFResourceManager
 from pdfminer.utils import apply_matrix_pt, mult_matrix
 from pymupdf import Font
 
-from .translator import BaseTranslator, OpenAITranslator, get_event_loop
+from .translator import BaseTranslator, OpenAITranslator
 
 
 log = logging.getLogger(__name__)
@@ -318,11 +317,11 @@ class TranslateConverter(PDFConverterEx):
         # B. 段落翻译
         log.debug("\n==========[SSTACK]==========\n")
 
-        async def _task(s: str):
+        def _task(s: str):
             if not s.strip() or re.match(r"^\{v\d+\}$", s):  # 空白和公式不翻译
                 return s
             try:
-                res = await self.translator.translate(s)
+                res = self.translator.translate(s)
                 return res
             except BaseException as e:
                 if log.isEnabledFor(logging.DEBUG):
@@ -330,12 +329,7 @@ class TranslateConverter(PDFConverterEx):
                 else:
                     log.exception(e, exc_info=False)
                 raise e
-        async def _run_tasks(tasks:list):
-            return await asyncio.gather(*tasks)
-        loop = get_event_loop()
-        if loop.is_running():
-            raise RuntimeError("Cannot run in already running loop. Use async context.")
-        news = loop.run_until_complete(_run_tasks([_task(s) for s in sstk]))  # 异步翻译
+        news = ([_task(s) for s in sstk])
 
         ############################################################
         # C. 新文档排版

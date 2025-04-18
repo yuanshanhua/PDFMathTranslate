@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 import re
@@ -18,14 +17,28 @@ from .config import ConfigManager
 
 logger = logging.getLogger(__name__)
 
-_global_loop = None
+
+_background_executor = None
 
 
-def get_event_loop():
-    global _global_loop
-    if _global_loop is None:
-        _global_loop = asyncio.new_event_loop()
-    return _global_loop
+def get_background_executor():
+    global _background_executor
+    if _background_executor is None:
+        from .executor import AsyncBackgroundExecutor
+
+        _background_executor = AsyncBackgroundExecutor()
+    return _background_executor
+
+
+def wait_all():
+    global _background_executor
+    if _background_executor is None:
+        raise RuntimeError("Background executor not initialized")
+    try:
+        return _background_executor.wait_all()
+    except TimeoutError as e:
+        logger.error(f"Timeout: {e}")
+        return None
 
 
 def remove_control_characters(s):
@@ -82,7 +95,7 @@ class BaseTranslator:
         """
         self.cache.add_params(k, v)
 
-    async def translate(self, text: str, ignore_cache: bool = False) -> str:
+    def translate(self, text: str, ignore_cache: bool = False) -> str:
         """
         Translate the text, and the other part should call this method.
         :param text: text to translate
@@ -93,11 +106,12 @@ class BaseTranslator:
             if cache is not None:
                 return cache
 
-        translation = await self.do_translate(text)
-        self.cache.set(text, translation)
+        translation = self.do_translate(text)
+        if translation != "":
+            self.cache.set(text, translation)
         return translation
 
-    async def do_translate(self, text: str) -> str:
+    def do_translate(self, text: str) -> str:
         """
         Actual translate text, override this method
         :param text: text to translate
@@ -182,6 +196,77 @@ class OpenAITranslator(BaseTranslator):
         if not model:
             model = self.envs["OPENAI_MODEL"]
         super().__init__(lang_in, lang_out, model, ignore_cache)
+        self.client = openai.OpenAI(
+            base_url=base_url or self.envs["OPENAI_BASE_URL"],
+            api_key=api_key or self.envs["OPENAI_API_KEY"],
+        )
+        self.prompttext = prompt
+        self.add_cache_impact_parameters("temperature", 0)
+        self.add_cache_impact_parameters("prompt", self.prompt("", self.prompttext))
+        think_filter_regex = r"^<think>.+?\n*(</think>|\n)*(</think>)\n*"
+        self.add_cache_impact_parameters("think_filter_regex", think_filter_regex)
+        self.think_filter_regex = re.compile(think_filter_regex, flags=re.DOTALL)
+
+    def do_translate(self, text) -> str:
+        count = 1
+        while True:
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    temperature=0,  # 随机采样可能会打断公式标记
+                    messages=self.prompt(text, self.prompttext),
+                )
+                break
+            except Exception as e:
+                logger.warning(f"request LLM API failed: {e}")
+                logger.warning(f"wait and retry in {count}s")
+                time.sleep(count)
+                count *= 2
+        if not response.choices:
+            if hasattr(response, "error"):
+                raise ValueError("Error response from Service", response.error)
+        _ = getattr(response.choices[0].message, "reasoning_content", None)
+        content = response.choices[0].message.content.strip()
+        content = self.think_filter_regex.sub("", content).strip()
+        return content
+
+    def get_formular_placeholder(self, id: int):
+        return "{{v" + str(id) + "}}"
+
+    def get_rich_text_left_placeholder(self, id: int):
+        return self.get_formular_placeholder(id)
+
+    def get_rich_text_right_placeholder(self, id: int):
+        return self.get_formular_placeholder(id + 1)
+
+
+class BackgroundTranslator(BaseTranslator):
+    # https://github.com/openai/openai-python
+    name = "background"
+    envs = {
+        "OPENAI_BASE_URL": "https://api.openai.com/v1",
+        "OPENAI_API_KEY": None,
+        "OPENAI_MODEL": "gpt-4o-mini",
+        "OPENAI_RATE": "5",  # QPS
+    }
+    CustomPrompt = True
+
+    def __init__(
+        self,
+        lang_in,
+        lang_out,
+        model,
+        base_url=None,
+        api_key=None,
+        envs=None,
+        prompt=None,
+        ignore_cache=False,
+        req_rate=5,
+    ):
+        self.set_envs(envs)
+        if not model:
+            model = self.envs["OPENAI_MODEL"]
+        super().__init__(lang_in, lang_out, model, ignore_cache)
         self.client = openai.AsyncOpenAI(
             base_url=base_url or self.envs["OPENAI_BASE_URL"],
             api_key=api_key or self.envs["OPENAI_API_KEY"],
@@ -194,7 +279,11 @@ class OpenAITranslator(BaseTranslator):
         self.add_cache_impact_parameters("think_filter_regex", think_filter_regex)
         self.think_filter_regex = re.compile(think_filter_regex, flags=re.DOTALL)
 
-    async def do_translate(self, text) -> str:
+    def do_translate(self, text: str) -> str:
+        get_background_executor().execute(self._translate(text))
+        return ""
+
+    async def _translate(self, text) -> str:
         async with self.limiter:
             count = 1
             while True:
@@ -216,6 +305,7 @@ class OpenAITranslator(BaseTranslator):
         _ = getattr(response.choices[0].message, "reasoning_content", None)
         content = response.choices[0].message.content.strip()
         content = self.think_filter_regex.sub("", content).strip()
+        self.cache.set(text, content)
         return content
 
     def get_formular_placeholder(self, id: int):

@@ -27,6 +27,7 @@ from .config import ConfigManager
 from .converter import TranslateConverter
 from .doclayout import OnnxModel
 from .pdfinterp import PDFPageInterpreterEx
+from .translator import wait_all
 
 
 NOTO_NAME = "noto"
@@ -355,6 +356,8 @@ def translate(
 
     result_files = []
 
+    raw_streams = []
+    filenames = []
     for file in files:
         if type(file) is str and (file.startswith("http://") or file.startswith("https://")):
             print("Online files detected, downloading...")
@@ -372,6 +375,7 @@ def translate(
                     f"Errors occur in downloading the PDF file. Please check the link(s).\nError:\n{e}"
                 )
         filename = os.path.splitext(os.path.basename(file))[0]
+        filenames.append(filename)
 
         # If the commandline has specified converting to PDF/A format
         # --compatible / -cp
@@ -385,6 +389,7 @@ def translate(
             doc_raw = open(file, "rb")
         s_raw = doc_raw.read()
         doc_raw.close()
+        raw_streams.append(s_raw)
 
         temp_dir = Path(tempfile.gettempdir())
         file_path = Path(file)
@@ -394,8 +399,16 @@ def translate(
                 logger.debug(f"Cleaned temp file: {file_path}")
         except Exception as e:
             logger.warning(f"Failed to clean temp file {file_path}", exc_info=True)
+        # 第一次遍历, 后台执行翻译任务
+        local_vars = locals().copy()
+        local_vars.update({"service": "background"})
+        _translate_stream(s_raw, **local_vars)
 
-        s_mono, s_dual = _translate_stream(s_raw, **locals())
+    wait_all()  # 等待翻译任务完成
+    for s_raw, filename in zip(raw_streams, filenames):
+        local_vars = locals().copy()
+        local_vars.update({"ignore_cache": False})
+        s_mono, s_dual = _translate_stream(s_raw, **locals())  # 第二次遍历, 理论上全部命中 cache
         file_mono = Path(output) / f"{filename}-mono.pdf"
         file_dual = Path(output) / f"{filename}-dual.pdf"
         doc_mono = open(file_mono, "wb")
