@@ -310,10 +310,7 @@ class PDFPageInterpreterEx(PDFPageInterpreter):
                 break
             if isinstance(obj, PSKeyword):
                 name = keyword_name(obj)
-                method = "do_%s" % name.replace("*", "_a").replace('"', "_w").replace(
-                    "'",
-                    "_q",
-                )
+                method = "do_%s" % name.replace("*", "_a").replace('"', "_w").replace("'", "_q")
                 if hasattr(self, method):
                     func = getattr(self, method)  # 此处调用 do_* 方法
                     nargs = func.__code__.co_argcount - 1

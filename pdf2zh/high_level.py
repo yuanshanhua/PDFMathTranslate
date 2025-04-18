@@ -200,6 +200,7 @@ def _translate_patch(
             page.pageno = pageno
             pix = doc_zh[page.pageno].get_pixmap()
             image = np.fromstring(pix.samples, np.uint8).reshape(pix.height, pix.width, 3)[:, :, ::-1]
+            # 用模型推测 PDF 布局, 根据测试此处耗时约 0.5s, 并不是瓶颈, 主要时间还是在等待 LLM 翻译
             page_layout = model.predict(image, imgsz=int(pix.height / 32) * 32)[0]
             # kdtree 是不可能 kdtree 的，不如直接渲染成图片，用空间换时间
             box = np.ones((pix.height, pix.width))
@@ -231,13 +232,13 @@ def _translate_patch(
             doc_zh.update_object(page.page_xref, "<<>>")
             doc_zh.update_stream(page.page_xref, b"")
             doc_zh[page.pageno].set_contents(page.page_xref)
-            interpreter.process_page(page)
+            interpreter.process_page(page)  # 此处遍历 page 内部并执行翻译
 
     device.close()
     return obj_patch
 
 
-def translate_stream(
+def _translate_stream(
     stream: bytes,
     pages: Optional[list[int]] = None,
     lang_in: str = "",
@@ -394,10 +395,7 @@ def translate(
         except Exception as e:
             logger.warning(f"Failed to clean temp file {file_path}", exc_info=True)
 
-        s_mono, s_dual = translate_stream(
-            s_raw,
-            **locals(),
-        )
+        s_mono, s_dual = _translate_stream(s_raw, **locals())
         file_mono = Path(output) / f"{filename}-mono.pdf"
         file_dual = Path(output) / f"{filename}-dual.pdf"
         doc_mono = open(file_mono, "wb")
