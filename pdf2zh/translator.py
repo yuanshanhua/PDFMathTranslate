@@ -263,6 +263,7 @@ class BackgroundTranslator(BaseTranslator):
         ignore_cache=False,
         req_rate=5,
     ):
+        self.name = "openai"  # todo 为设置 cache 的权宜之计
         self.set_envs(envs)
         if not model:
             model = self.envs["OPENAI_MODEL"]

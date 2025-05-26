@@ -13,7 +13,7 @@ from pdfminer.pdfinterp import PDFGraphicState, PDFResourceManager
 from pdfminer.utils import apply_matrix_pt, mult_matrix
 from pymupdf import Font
 
-from .translator import BaseTranslator, OpenAITranslator
+from .translator import BackgroundTranslator, BaseTranslator, OpenAITranslator
 
 
 log = logging.getLogger(__name__)
@@ -133,11 +133,11 @@ class TranslateConverter(PDFConverterEx):
         service_model = param[1] if len(param) > 1 else None
         if not envs:
             envs = {}
-        for translator in [OpenAITranslator]:
+        for translator in [OpenAITranslator, BackgroundTranslator]:
             if service_name == translator.name:
                 self.translator = translator(lang_in, lang_out, service_model, envs=envs, prompt=prompt, ignore_cache=ignore_cache)
         if not self.translator:
-            raise ValueError("Unsupported translation service")
+            raise ValueError("Unsupported translation service: "+service_name)
 
     def receive_layout(self, ltpage: LTPage):
         # 段落

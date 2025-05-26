@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 from asyncio import CancelledError
 from pathlib import Path
 from string import Template
@@ -403,8 +404,9 @@ def translate(
         local_vars = locals().copy()
         local_vars.update({"service": "background"})
         _translate_stream(s_raw, **local_vars)
-
+    st = time.time()
     wait_all()  # 等待翻译任务完成
+    print(f"Translation completed in {time.time() - st:.2f}s")
     for s_raw, filename in zip(raw_streams, filenames):
         local_vars = locals().copy()
         local_vars.update({"ignore_cache": False})
