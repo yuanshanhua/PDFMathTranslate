@@ -201,7 +201,7 @@ def _translate_patch(
                 callback(progress)
             page.pageno = pageno
             pix = doc_zh[page.pageno].get_pixmap()
-            image = np.fromstring(pix.samples, np.uint8).reshape(pix.height, pix.width, 3)[:, :, ::-1]
+            image = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width, 3)[:, :, ::-1]
             # 用模型推测 PDF 布局, 根据测试此处耗时约 0.5s, 并不是瓶颈, 主要时间还是在等待 LLM 翻译
             page_layout = model.predict(image, imgsz=int(pix.height / 32) * 32)[0]
             # kdtree 是不可能 kdtree 的，不如直接渲染成图片，用空间换时间

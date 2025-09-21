@@ -43,7 +43,7 @@ dev = ["black", "flake8", "pre-commit", "pytest", "build", "bumpver>=2024.1130"]
 Homepage = "https://github.com/Byaidu/PDFMathTranslate"
 
 [project.scripts]
-pdf2zh = "pdf2zh.pdf2zh:main"
+pdf2zhx = "pdf2zh.pdf2zh:main"
 
 [tool.uv]
 index-url = "http://mirrors.aliyun.com/pypi/simple"

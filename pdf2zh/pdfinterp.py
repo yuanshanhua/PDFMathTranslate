@@ -17,26 +17,10 @@ from pdfminer.pdfinterp import (
     PDFStackT,
 )
 from pdfminer.pdfpage import PDFPage
-from pdfminer.pdftypes import (
-    PDFObjRef,
-    dict_value,
-    list_value,
-    resolve1,
-    stream_value,
-)
+from pdfminer.pdftypes import PDFObjRef, dict_value, list_value, resolve1, stream_value
 from pdfminer.psexceptions import PSEOF
-from pdfminer.psparser import (
-    PSKeyword,
-    keyword_name,
-    literal_name,
-)
-from pdfminer.utils import (
-    MATRIX_IDENTITY,
-    Matrix,
-    Rect,
-    apply_matrix_pt,
-    mult_matrix,
-)
+from pdfminer.psparser import PSKeyword, keyword_name, literal_name
+from pdfminer.utils import MATRIX_IDENTITY, Matrix, Rect, apply_matrix_pt, mult_matrix
 
 
 log = logging.getLogger(__name__)
@@ -162,7 +146,7 @@ class PDFPageInterpreterEx(PDFPageInterpreter):
     # 重载返回调用参数（SCN）
     def do_SCN(self) -> None:
         """Set color for stroking operations."""
-        if self.scs:
+        if hasattr(self, "scs") and self.scs:
             n = self.scs.ncomponents
         else:
             if settings.STRICT:
@@ -174,7 +158,7 @@ class PDFPageInterpreterEx(PDFPageInterpreter):
 
     def do_scn(self) -> None:
         """Set color for nonstroking operations"""
-        if self.ncs:
+        if hasattr(self, "ncs") and self.ncs:
             n = self.ncs.ncomponents
         else:
             if settings.STRICT:
@@ -223,8 +207,10 @@ class PDFPageInterpreterEx(PDFPageInterpreter):
                 [xobj],
                 ctm=ctm,
             )
-            self.ncs = interpreter.ncs
-            self.scs = interpreter.scs
+            if hasattr(interpreter.device, "ncs"):
+                self.ncs = interpreter.ncs
+            if hasattr(interpreter.device, "scs"):
+                self.scs = interpreter.scs
             try:  # 有的时候 form 字体加不上这里会烂掉
                 self.device.fontid = interpreter.fontid
                 self.device.fontmap = interpreter.fontmap
