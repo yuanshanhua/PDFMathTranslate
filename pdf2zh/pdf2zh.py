@@ -10,7 +10,7 @@ import logging
 import os
 import sys
 from string import Template
-from typing import List, Optional
+from typing import List
 
 from . import __version__, log
 from .config import ConfigManager
@@ -149,7 +149,7 @@ def _create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _parse_args(args: Optional[List[str]]) -> argparse.Namespace:
+def _parse_args(args: List[str] | None) -> argparse.Namespace:
     parsed_args = _create_parser().parse_args(args=args)
 
     if parsed_args.pages:
@@ -190,7 +190,7 @@ def _find_all_files_in_directory(directory_path):
     return file_paths
 
 
-def main(args: Optional[List[str]] = None) -> int:
+def main(args: List[str] | None = None) -> int:
     from rich.logging import RichHandler
 
     logging.basicConfig(level=logging.INFO, handlers=[RichHandler()])

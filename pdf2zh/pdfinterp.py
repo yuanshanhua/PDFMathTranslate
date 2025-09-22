@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Optional, Sequence, Tuple, cast
+from typing import Any, Dict, Sequence, Tuple, cast
 
 import numpy as np
 from pdfminer import settings
@@ -26,7 +26,7 @@ from pdfminer.utils import MATRIX_IDENTITY, Matrix, Rect, apply_matrix_pt, mult_
 log = logging.getLogger(__name__)
 
 
-def safe_float(o: Any) -> Optional[float]:
+def safe_float(o: Any) -> float | None:
     try:
         return float(o)
     except (TypeError, ValueError):
@@ -58,7 +58,7 @@ class PDFPageInterpreterEx(PDFPageInterpreter):
         if not resources:
             return
 
-        def get_colorspace(spec: object) -> Optional[PDFColorSpace]:
+        def get_colorspace(spec: object) -> PDFColorSpace | None:
             if isinstance(spec, list):
                 name = literal_name(spec[0])
             else:

@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-from typing import Optional
 
 from peewee import SQL, AutoField, CharField, Model, SqliteDatabase, TextField
 
@@ -43,7 +42,7 @@ class TranslationCache:
             return [TranslationCache._sort_dict_recursively(item) for item in obj]
         return obj
 
-    def __init__(self, translate_engine: str, translate_engine_params: dict = None):
+    def __init__(self, translate_engine: str, translate_engine_params: dict | None = None):
         assert len(translate_engine) < 20, "current cache require translate engine name less than 20 characters"
         self.translate_engine = translate_engine
         self.replace_params(translate_engine_params)
@@ -51,14 +50,14 @@ class TranslationCache:
     # The program typically starts multi-threaded translation
     # only after cache parameters are fully configured,
     # so thread safety doesn't need to be considered here.
-    def replace_params(self, params: dict = None):
+    def replace_params(self, params: dict | None = None):
         if params is None:
             params = {}
         self.params = params
         params = self._sort_dict_recursively(params)
         self.translate_engine_params = json.dumps(params)
 
-    def update_params(self, params: dict = None):
+    def update_params(self, params: dict | None = None):
         if params is None:
             params = {}
         self.params.update(params)
@@ -70,7 +69,7 @@ class TranslationCache:
 
     # Since peewee and the underlying sqlite are thread-safe,
     # get and set operations don't need locks.
-    def get(self, original_text: str) -> Optional[str]:
+    def get(self, original_text: str) -> str | None:
         result = _TranslationCache.get_or_none(
             translate_engine=self.translate_engine,
             translate_engine_params=self.translate_engine_params,

@@ -106,17 +106,17 @@ class TranslateConverter(PDFConverterEx):
     def __init__(
         self,
         rsrcmgr,
-        vfont: str = None,
-        vchar: str = None,
+        vfont: str | None = None,
+        vchar: str | None = None,
         thread: int = 0,
         layout={},
         lang_in: str = "",
         lang_out: str = "",
         service: str = "",
         noto_name: str = "",
-        noto: Font = None,
-        envs: Dict = None,
-        prompt: Template = None,
+        noto: Font | None = None,
+        envs: Dict | None = None,
+        prompt: Template | None = None,
         ignore_cache: bool = False,
     ) -> None:
         super().__init__(rsrcmgr)

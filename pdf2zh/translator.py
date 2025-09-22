@@ -68,7 +68,7 @@ class BaseTranslator:
             },
         )
 
-    def set_envs(self, envs):
+    def set_envs(self, envs: dict | None):
         # Detach from self.__class__.envs
         # Cannot use self.envs = copy(self.__class__.envs)
         # because if set_envs called twice, the second call will override the first call
@@ -182,15 +182,15 @@ class OpenAITranslator(BaseTranslator):
 
     def __init__(
         self,
-        lang_in,
-        lang_out,
-        model,
-        base_url=None,
-        api_key=None,
-        envs=None,
-        prompt=None,
-        ignore_cache=False,
-        req_rate=5,
+        lang_in: str,
+        lang_out: str,
+        model: str,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        envs: dict | None = None,
+        prompt: Template | None = None,
+        ignore_cache: bool = False,
+        req_rate: int = 5,
     ):
         self.set_envs(envs)
         if not model:
@@ -223,10 +223,13 @@ class OpenAITranslator(BaseTranslator):
                 time.sleep(count)
                 count *= 2
         if not response.choices:
-            if hasattr(response, "error"):
-                raise ValueError("Error response from Service", response.error)
+            if r := getattr(response, "error", None):
+                raise ValueError("Error response from Service", r)
         _ = getattr(response.choices[0].message, "reasoning_content", None)
-        content = response.choices[0].message.content.strip()
+        if content := response.choices[0].message.content:
+            content = content.strip()
+        else:
+            content = ""
         content = self.think_filter_regex.sub("", content).strip()
         return content
 
@@ -253,15 +256,15 @@ class BackgroundTranslator(BaseTranslator):
 
     def __init__(
         self,
-        lang_in,
-        lang_out,
-        model,
-        base_url=None,
-        api_key=None,
-        envs=None,
-        prompt=None,
-        ignore_cache=False,
-        req_rate=5,
+        lang_in: str,
+        lang_out: str,
+        model: str,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        envs: dict | None = None,
+        prompt: Template | None = None,
+        ignore_cache: bool = False,
+        req_rate: int = 5,
     ):
         self.name = "openai"  # todo 为设置 cache 的权宜之计
         self.set_envs(envs)
@@ -281,7 +284,7 @@ class BackgroundTranslator(BaseTranslator):
         self.think_filter_regex = re.compile(think_filter_regex, flags=re.DOTALL)
 
     def do_translate(self, text: str) -> str:
-        get_background_executor().execute(self._translate(text))
+        get_background_executor().submit(self._translate(text))
         return ""
 
     async def _translate(self, text) -> str:
@@ -297,14 +300,20 @@ class BackgroundTranslator(BaseTranslator):
                     break
                 except Exception as e:
                     logger.warning(f"request LLM API failed: {e}")
+                    if "content_filter" in str(e).lower():
+                        logger.error(f"触发内容限制: {text}")
+                        return ""
                     logger.warning(f"wait and retry in {count}s")
                     time.sleep(count)
                     count *= 2
         if not response.choices:
-            if hasattr(response, "error"):
-                raise ValueError("Error response from Service", response.error)
+            if r := getattr(response, "error", None):
+                raise ValueError("Error response from Service", r)
         _ = getattr(response.choices[0].message, "reasoning_content", None)
-        content = response.choices[0].message.content.strip()
+        if content := response.choices[0].message.content:
+            content = content.strip()
+        else:
+            content = ""
         content = self.think_filter_regex.sub("", content).strip()
         self.cache.set(text, content)
         return content

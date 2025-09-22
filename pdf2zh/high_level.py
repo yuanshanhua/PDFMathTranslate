@@ -9,9 +9,10 @@ import sys
 import tempfile
 import time
 from asyncio import CancelledError
+from collections.abc import Callable
 from pathlib import Path
 from string import Template
-from typing import Any, BinaryIO, Dict, List, Optional
+from typing import Any, BinaryIO, Dict, List
 
 import numpy as np
 import requests
@@ -144,24 +145,24 @@ def _check_files(files: List[str]) -> List[str]:
 
 def _translate_patch(
     inf: BinaryIO,
-    pages: Optional[list[int]] = None,
+    doc_zh: Document,
+    noto: Font,
+    model: OnnxModel,
+    pages: list[int] | None = None,
     vfont: str = "",
     vchar: str = "",
     thread: int = 0,
-    doc_zh: Document = None,
     lang_in: str = "",
     lang_out: str = "",
     service: str = "",
     noto_name: str = "",
-    noto: Font = None,
-    callback: object = None,
-    cancellation_event: asyncio.Event = None,
-    model: OnnxModel = None,
-    envs: Dict = None,
-    prompt: Template = None,
+    callback: object | None = None,
+    cancellation_event: asyncio.Event | None = None,
+    envs: Dict | None = None,
+    prompt: Template | None = None,
     ignore_cache: bool = False,
     **kwarg: Any,
-) -> None:
+) -> dict:
     rsrcmgr = PDFResourceManager()
     layout = {}
     device = TranslateConverter(
@@ -242,18 +243,18 @@ def _translate_patch(
 
 def _translate_stream(
     stream: bytes,
-    pages: Optional[list[int]] = None,
+    model: OnnxModel,
+    pages: list[int] | None = None,
     lang_in: str = "",
     lang_out: str = "",
     service: str = "",
     thread: int = 0,
     vfont: str = "",
     vchar: str = "",
-    callback: object = None,
-    cancellation_event: asyncio.Event = None,
-    model: OnnxModel = None,
-    envs: Dict = None,
-    prompt: Template = None,
+    callback: Callable | None = None,
+    cancellation_event: asyncio.Event | None = None,
+    envs: Dict | None = None,
+    prompt: Template | None = None,
     skip_subset_fonts: bool = False,
     ignore_cache: bool = False,
     **kwarg: Any,
@@ -303,7 +304,25 @@ def _translate_stream(
     fp = io.BytesIO()
 
     doc_zh.save(fp)
-    obj_patch: dict = _translate_patch(fp, **locals())
+    obj_patch: dict = _translate_patch(
+        inf=fp,
+        doc_zh=doc_zh,
+        noto=noto,
+        model=model,
+        pages=pages,
+        vfont=vfont,
+        vchar=vchar,
+        thread=thread,
+        lang_in=lang_in,
+        lang_out=lang_out,
+        service=service,
+        noto_name=noto_name,
+        callback=callback,
+        cancellation_event=cancellation_event,
+        envs=envs,
+        prompt=prompt,
+        ignore_cache=ignore_cache,
+    )
 
     for obj_id, ops_new in obj_patch.items():
         # ops_old=doc_en.xref_stream(obj_id)
@@ -326,20 +345,20 @@ def _translate_stream(
 
 def translate(
     files: list[str],
+    model: OnnxModel,
     output: str = "",
-    pages: Optional[list[int]] = None,
+    pages: list[int] | None = None,
     lang_in: str = "",
     lang_out: str = "",
     service: str = "",
     thread: int = 0,
     vfont: str = "",
     vchar: str = "",
-    callback: object = None,
+    callback: Callable | None = None,
     compatible: bool = False,
-    cancellation_event: asyncio.Event = None,
-    model: OnnxModel = None,
-    envs: Dict = None,
-    prompt: Template = None,
+    cancellation_event: asyncio.Event | None = None,
+    envs: Dict | None = None,
+    prompt: Template | None = None,
     skip_subset_fonts: bool = False,
     ignore_cache: bool = False,
     **kwarg: Any,
@@ -401,16 +420,44 @@ def translate(
         except Exception as e:
             logger.warning(f"Failed to clean temp file {file_path}", exc_info=True)
         # 第一次遍历, 后台执行翻译任务
-        local_vars = locals().copy()
-        local_vars.update({"service": "background"})
-        _translate_stream(s_raw, **local_vars)
+        _translate_stream(
+            stream=s_raw,
+            pages=pages,
+            lang_in=lang_in,
+            lang_out=lang_out,
+            service="background",
+            thread=thread,
+            vfont=vfont,
+            vchar=vchar,
+            callback=callback,
+            cancellation_event=cancellation_event,
+            model=model,
+            envs=envs,
+            prompt=prompt,
+            skip_subset_fonts=skip_subset_fonts,
+            ignore_cache=ignore_cache,
+        )
     st = time.time()
     wait_all()  # 等待翻译任务完成
     print(f"Translation completed in {time.time() - st:.2f}s")
     for s_raw, filename in zip(raw_streams, filenames):
-        local_vars = locals().copy()
-        local_vars.update({"ignore_cache": False})
-        s_mono, s_dual = _translate_stream(s_raw, **locals())  # 第二次遍历, 理论上全部命中 cache
+        s_mono, s_dual = _translate_stream(
+            stream=s_raw,
+            pages=pages,
+            lang_in=lang_in,
+            lang_out=lang_out,
+            service=service,
+            thread=thread,
+            vfont=vfont,
+            vchar=vchar,
+            callback=callback,
+            cancellation_event=cancellation_event,
+            model=model,
+            envs=envs,
+            prompt=prompt,
+            skip_subset_fonts=skip_subset_fonts,
+            ignore_cache=False,
+        )  # 第二次遍历, 理论上全部命中 cache
         file_mono = Path(output) / f"{filename}-mono.pdf"
         file_dual = Path(output) / f"{filename}-dual.pdf"
         doc_mono = open(file_mono, "wb")
